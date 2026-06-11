@@ -24,9 +24,13 @@ These skills let any Claude Code agent operate that gateway:
 
 ## Install
 
+The content (SKILL prompts, SDK, playbooks, examples) is agent-agnostic. Only the *discovery path* differs by harness.
+
+### Claude Code
+
 ```bash
 git clone https://github.com/rahulsub/synapse-os-skills.git ~/synapse-os-skills
-cp -R ~/synapse-os-skills/skills/synapse-os ~/.claude/skills/
+cp -R ~/synapse-os-skills/skills/synapse-os    ~/.claude/skills/
 cp -R ~/synapse-os-skills/skills/synapse-os-cos ~/.claude/skills/
 ```
 
@@ -34,11 +38,52 @@ Or symlink so you get updates with `git pull`:
 
 ```bash
 git clone https://github.com/rahulsub/synapse-os-skills.git ~/synapse-os-skills
-ln -s ~/synapse-os-skills/skills/synapse-os    ~/.claude/skills/synapse-os
+ln -s ~/synapse-os-skills/skills/synapse-os     ~/.claude/skills/synapse-os
 ln -s ~/synapse-os-skills/skills/synapse-os-cos ~/.claude/skills/synapse-os-cos
 ```
 
 Restart Claude Code (or run `/skills` in a new session) and confirm both appear.
+
+### Codex (OpenAI CLI)
+
+Codex doesn't auto-discover skills from a directory — it loads `AGENTS.md` from the repo root. Two options:
+
+**Option A — drop into your project root + `AGENTS.md` pointer (recommended).**
+
+```bash
+cd ~/your-project
+git clone https://github.com/rahulsub/synapse-os-skills.git .synapse-os-skills
+```
+
+Then add (or append to) `AGENTS.md` at your project root:
+
+```markdown
+## Synapse OS
+
+This project interacts with a Synapse OS organization instance. Two skill bundles
+are vendored at `.synapse-os-skills/skills/`:
+
+- `.synapse-os-skills/skills/synapse-os/` — transport SDK + intent contract.
+  Read `SKILL.md`, `vocabulary.md`, and `intent-contract.md` BEFORE making any
+  intent call. Use the SDK at `synapse-os.ts`; never call the gateway directly.
+
+- `.synapse-os-skills/skills/synapse-os-cos/` — Chief-of-Staff playbook. Read
+  `SKILL.md` and the relevant `playbooks/*.md` before strategic org work
+  (weekly digest, coaching, blocker trees, codifying decisions).
+
+Both skills are agent-agnostic. The TypeScript SDK runs anywhere Node 18+ runs.
+Set `SYNAPSE_ADMIN_TOKEN` (or `SYNAPSE_ADMIN_TOKEN_<ORG>`) before invoking.
+```
+
+Codex reads `AGENTS.md` on session start and will pull the skill files in as needed.
+
+**Option B — paste the prompts into your Codex system prompt.**
+
+If you don't want files in your repo, copy the contents of `skills/synapse-os/SKILL.md` and `skills/synapse-os-cos/SKILL.md` into your Codex system prompt, and load `vocabulary.md`, `intent-contract.md`, and `synapse-os.ts` as attached context when relevant.
+
+### Any other agent / from-scratch script
+
+Both skills are also just files. The SDK at `skills/synapse-os/synapse-os.ts` is a single TypeScript module with one `npm` dependency (`keytar`, optional — only needed for `fromKeychain`). Drop it into any TypeScript project and `import { SynapseOS } from './synapse-os'`. The `SKILL.md` and playbook docs are useful as system-prompt context for any LLM-driven agent.
 
 ---
 
