@@ -32,6 +32,35 @@ export type CheckinStatus = 'in_progress' | 'blocked' | 'completed' | 'failed';
 export type BriefKind = 'coaching' | 'contract' | 'qa' | 'notification';
 export type DecisionStatus = 'active' | 'rejected' | 'superseded';
 
+/**
+ * Conventional defaults for `Shipment.kind`. Freeform by design — agents may
+ * invent a custom value when none of these fits. See SOUL.md guidance in the
+ * synapse-fixer / chief-of-staff templates for the contract.
+ */
+export const SHIPMENT_KIND_DEFAULTS = [
+  'code',           // PR merged, deployed feature, infra change
+  'content',        // curriculum unit, blog post, deck, written artifact
+  'model',          // trained checkpoint promoted, eval baseline shipped
+  'doc',            // documentation page, AGENTS.md update, runbook
+  'customer_comm',  // customer email/DM sent, support reply
+  'capability',     // automated process turned on, integration live
+] as const;
+export type ShipmentKindDefault = typeof SHIPMENT_KIND_DEFAULTS[number];
+/** Accepts the conventional defaults with autocomplete; falls through to string for custom kinds. */
+export type ShipmentKind = ShipmentKindDefault | (string & {});
+
+export interface Shipment {
+  id: string;
+  agent_id: string;
+  project_id?: string;
+  workflow_id?: string;
+  kind: ShipmentKind;
+  reference: string;
+  outcome_summary: string;
+  evidence_artifact_ids: string[];
+  created_at: string;
+}
+
 export interface Objective {
   id: string;
   title: string;
@@ -256,6 +285,7 @@ export class SynapseOS {
   readonly choices: ChoicesCluster;
   readonly templates: TemplatesCluster;
   readonly fleet: FleetCluster;
+  readonly shipments: ShipmentsCluster;
 
   constructor(opts: SynapseOSOptions) {
     if (!opts.dashboardUrl) throw new Error('dashboardUrl required');
@@ -282,6 +312,7 @@ export class SynapseOS {
     this.choices = new ChoicesCluster(this);
     this.templates = new TemplatesCluster(this);
     this.fleet = new FleetCluster(this);
+    this.shipments = new ShipmentsCluster(this);
   }
 
   static fromEnv(opts: FromEnvOptions): SynapseOS {
@@ -893,6 +924,63 @@ class FleetCluster {
 
   async revokeEnrollment(code: string): Promise<{ revoked: true }> {
     return this.c.intent('enrollment.revoke', { code });
+  }
+}
+
+class ShipmentsCluster {
+  constructor(private readonly c: SynapseOS) {}
+
+  /**
+   * Record output the agent produced. Workflow completion is NOT a ship —
+   * use this when something concrete went out (PR merged, deploy live,
+   * model checkpoint promoted, customer email sent, etc.).
+   *
+   * Prefer a value from SHIPMENT_KIND_DEFAULTS when one fits. Custom kinds
+   * are allowed and intentional — use the same lowercase, hyphenated string
+   * every time you ship that class of thing, so the kind acts as a stable
+   * aggregation key. Briefly explain the choice in `outcome_summary`.
+   */
+  async record(opts: {
+    kind: ShipmentKind;
+    reference: string;
+    outcome_summary: string;
+    project_id?: string;
+    workflow_id?: string;
+    evidence_artifact_ids?: string[];
+  }): Promise<{ shipment_id: string }> {
+    if (!opts.kind || opts.kind.trim() === '') {
+      throw new SynapseError('shipment.record: kind required', 'shipment.record');
+    }
+    if (!/^[a-z][a-z0-9_-]*$/.test(opts.kind)) {
+      throw new SynapseError(
+        `shipment.record: kind '${opts.kind}' must be lowercase ASCII, optionally with hyphens/underscores, starting with a letter`,
+        'shipment.record',
+      );
+    }
+    if (!opts.reference || opts.reference.trim() === '') {
+      throw new SynapseError('shipment.record: reference required', 'shipment.record');
+    }
+    if (!opts.outcome_summary || opts.outcome_summary.trim() === '') {
+      throw new SynapseError('shipment.record: outcome_summary required', 'shipment.record');
+    }
+    return this.c.intent('shipment.record', opts);
+  }
+
+  /**
+   * Query shipments. Defaults to the last 7 days of the caller's scope.
+   * Admin-scoped callers can read across the org; non-admin callers see
+   * only shipments tied to projects under their primary team.
+   */
+  async query(opts: {
+    project_id?: string;
+    agent_id?: string;
+    kind?: string;
+    workflow_id?: string;
+    since?: string;
+    limit?: number;
+  } = {}): Promise<Shipment[]> {
+    const out = await this.c.intent<{ shipments: Shipment[] }>('shipment.query', opts);
+    return out.shipments;
   }
 }
 
